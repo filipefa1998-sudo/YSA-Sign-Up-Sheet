@@ -235,6 +235,7 @@
   }
 
   .save-status.saved { color: #22a822; }
+  .save-status.error { color: #e8271b; }
 
   /* FOOTER */
   .footer {
@@ -331,49 +332,83 @@
 
 </div>
 
-<script>
-const KEY = 'dynamicduos_security_2026';
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD-BKTaCSvPIkuOQOFDn8muEd1BBAomev0",
+  authDomain: "riverton24thcalendar.firebaseapp.com",
+  projectId: "riverton24thcalendar",
+  storageBucket: "riverton24thcalendar.firebasestorage.app",
+  messagingSenderId: "356944124665",
+  appId: "1:356944124665:web:b9ff396cbd0ecb9377a028"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const DOC = doc(db, 'events', 'dynamicduos_security_2026');
 
 const defaultState = {
   hallways: [{name:'',phone:''},{name:'',phone:''},{name:'',phone:''},{name:'',phone:''}],
-  outside: [{name:'',phone:''},{name:'',phone:''},{name:'',phone:''},{name:'',phone:''}],
-  dance: [{name:'',phone:''},{name:'',phone:''},{name:'',phone:''},{name:'',phone:''}]
+  outside:  [{name:'',phone:''},{name:'',phone:''},{name:'',phone:''},{name:'',phone:''}],
+  dance:    [{name:'',phone:''},{name:'',phone:''},{name:'',phone:''},{name:'',phone:''}]
 };
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(defaultState));
-  } catch { return JSON.parse(JSON.stringify(defaultState)); }
-}
+let remoteState = JSON.parse(JSON.stringify(defaultState));
+let focusedInput = null;
 
-function saveState(state) {
-  localStorage.setItem(KEY, JSON.stringify(state));
+// Track which input is focused so we don't overwrite mid-type
+document.querySelectorAll('.field').forEach(input => {
+  input.addEventListener('focus', () => focusedInput = input);
+  input.addEventListener('blur',  () => focusedInput = null);
+});
+
+function showStatus(msg, ok = true) {
   const el = document.getElementById('saveStatus');
-  el.textContent = '✔ Saved';
-  el.className = 'save-status saved';
-  setTimeout(() => { el.textContent = ''; el.className = 'save-status'; }, 2000);
+  el.textContent = msg;
+  el.className = 'save-status' + (ok ? ' saved' : ' error');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.textContent = ''; el.className = 'save-status'; }, 2500);
 }
 
 function hydrate(state) {
   document.querySelectorAll('.field').forEach(input => {
+    if (input === focusedInput) return; // never stomp the field being typed in
     const { zone, slot, field } = input.dataset;
     input.value = state[zone]?.[+slot]?.[field] || '';
   });
 }
 
-const state = loadState();
-hydrate(state);
+// Real-time listener — updates all other devices instantly
+onSnapshot(DOC, snap => {
+  if (snap.exists()) {
+    remoteState = snap.data();
+    hydrate(remoteState);
+  }
+});
+
+// Debounced save to Firestore
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await setDoc(DOC, remoteState);
+      showStatus('✔ Saved');
+    } catch (e) {
+      showStatus('⚠ Save failed — check connection', false);
+    }
+  }, 600);
+}
 
 document.querySelectorAll('.field').forEach(input => {
   input.addEventListener('input', () => {
     const { zone, slot, field } = input.dataset;
-    state[zone][+slot][field] = input.value;
-    saveState(state);
+    remoteState[zone][+slot][field] = input.value;
+    scheduleSave();
   });
 });
-
-
 </script>
 </body>
 </html>
